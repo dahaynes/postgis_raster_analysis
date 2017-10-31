@@ -1,4 +1,5 @@
-import subprocess, os
+import subprocess, os, itertools
+import multiprocessing as mp
 
 
 def BuildRaster(rasterFilePath , rasterTableName, binaryFilePath, srid=4326, tilesize=250):
@@ -6,24 +7,39 @@ def BuildRaster(rasterFilePath , rasterTableName, binaryFilePath, srid=4326, til
     This function will build run the binary program raster2pgsql and save the file
     """
 
-    rasterCommand = "raster2pgsql -C -x -I -Y -F -t %sx%s -s %s %s %s_%s > %s" % (tilesize, tilesize, srid, rasterFilePath, rasterFilePath, tilesize, binaryFilePath)
-
-    p = self.subprocess.Popen(rasterCommand, stdout=self.subprocess.PIPE, shell=True)
+    rasterCommand = "raster2pgsql -C -x -I -Y -F -t %sx%s -s %s %s %s_%s > %s" % (tilesize, tilesize, srid, rasterFilePath, rasterTableName,tilesize, binaryFilePath)
+    
+    print(rasterCommand)
+    p = subprocess.Popen(rasterCommand, stdout=subprocess.PIPE, shell=True)
     p.wait()
     out, err = p.communicate()
+    postgisTableName = "%s_%s" % (rasterTableName, tilesize)
+    return (binaryFilePath, postgisTableName)
 
-    return binaryFilePath
+def LoadBinary(inParameters):
 
-def LoadBinary(database, binaryFilePath):
-
+    #print(inParameters)
+    database =  inParameters[2]
+    postgisTableName = inParameters[1]
+    binaryFilePath = inParameters[0]
     rasterCommand = "psql -d %s -f %s" % (database, binaryFilePath)
+    #print(rasterCommand)
+    try:
+        p = subprocess.Popen(rasterCommand, stdout=subprocess.PIPE, shell=True)
+        p.wait()
+        out, err = p.communicate()
+    except:
+        print("Deleting table %s" % (postgisTableName))
+        dropTableCommand = 'psql -d %s -c "drop table %s"' % (database, postgisTableName)
+        print(dropTableCommand)
+        p = subprocess.Popen(dropTableCommand)
+        p.wait()
+        p = subprocess.Popen(rasterCommand, stdout=subprocess.PIPE, shell=True)
+        p.wait()
+        out, err = p.communicate()
 
-    p = self.subprocess.Popen(rasterCommand, stdout=self.subprocess.PIPE, shell=True)
-    p.wait()
-    out, err = p.communicate()
 
-
-def MultiProcessLoading(psqlInstances, binaryFilePath):
+def MultiProcessLoading(psqlInstances, binaryFilePath, psqlTableName):
     """
     This function creates the pool based upon the number of SciDB instances and the generates the parameters for each Python instance
     """
@@ -31,23 +47,43 @@ def MultiProcessLoading(psqlInstances, binaryFilePath):
     pool = mp.Pool(len(psqlInstances), maxtasksperchild=1)    #Multiprocessing module
 
     try:
-        results = pool.imap(LoadBinary, itertools.cycle(psqlInstances), itertools.repeat(binaryFilePath))
+        results = pool.imap(LoadBinary, ((binaryFilePath,psqlTableName, i) for i in psqlInstances) )
     except:
-        print(multiprocessing.get_logger())
+        print(mp.get_logger())
 
-        #timeDictionary  = {str(i[0]):{"version": i[0], "writeTime": i[1], "loadTime": i[2] } for i in results}
-        return timeDictionary
+      
         
 
     pool.close()
     pool.join()
 
 
-def Main(rasterFilePath, rasterTableName, binaryFilePath, srid=4326, tilesize=250)
+def Main(rasterFilePath, rasterTableName, binaryFilePath, srid=4326, tilesize=250):
     """
 
     """
-    binaryPath = BuildRaster(rasterFilePath , rasterTableName, binaryFilePath, srid, tilesize)
+    binaryPath, postTableName = BuildRaster(rasterFilePath , rasterTableName, binaryFilePath, srid, tilesize)
     psqlDatabases = ['master', 'node1', 'node2', 'node3', 'node4', 'node5', 'node6', 'node7', 'node8']
-    if os.path.isfile():
-        MultiProcessLoading(psqlDatabases, binaryPath)
+    if os.path.isfile(binaryPath):
+        MultiProcessLoading(psqlDatabases, binaryPath, postTableName)
+
+
+def argument_parser():
+    """
+    Parse arguments and return Arguments
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(description= "multiprocessing module for loading dataset into PostGIS with multiple instances")     
+    parser.add_argument("-f", required =True, help="raster file path", dest="filepath")
+    parser.add_argument("-n", required =True, help="raster table name", dest="tablename")
+    parser.add_argument("-b", required =True, help="raster binary file", dest="binarypath")
+    parser.add_argument("-s", required =False, help="raster projection", dest="srid", default=4326)
+    parser.add_argument("-t", required =False, help="raster tile size", dest="tilesize", default=250)
+
+
+    return parser
+
+if __name__ == '__main__':
+    args = argument_parser().parse_args()
+    Main(args.filepath, args.tablename, args.binarypath, args.srid, args.tilesize)
