@@ -34,9 +34,9 @@ def LoadBinary(inParameters):
         print(dropTableCommand)
         p = subprocess.Popen(dropTableCommand)
         p.wait()
-        p = subprocess.Popen(rasterCommand, stdout=subprocess.PIPE, shell=True)
-        p.wait()
-        out, err = p.communicate()
+        #p = subprocess.Popen(rasterCommand, stdout=subprocess.PIPE, shell=True)
+        #p.wait()
+        #out, err = p.communicate()
 
 
 def MultiProcessLoading(psqlInstances, binaryFilePath, psqlTableName):
@@ -56,6 +56,7 @@ def MultiProcessLoading(psqlInstances, binaryFilePath, psqlTableName):
 
     pool.close()
     pool.join()
+    os.remove(binaryFilePath)
 
 
 def Main(rasterFilePath, rasterTableName, binaryFilePath, srid=4326, tilesize=250):
@@ -63,7 +64,7 @@ def Main(rasterFilePath, rasterTableName, binaryFilePath, srid=4326, tilesize=25
 
     """
     binaryPath, postTableName = BuildRaster(rasterFilePath , rasterTableName, binaryFilePath, srid, tilesize)
-    psqlDatabases = ['master', 'node1', 'node2', 'node3', 'node4', 'node5', 'node6', 'node7', 'node8']
+    psqlDatabases = ['master', 'node1', 'node2', 'node3', 'node4', 'node5', 'node6', 'node7', 'node8', 'node9', 'node10', 'node11', 'node12']
     if os.path.isfile(binaryPath):
         MultiProcessLoading(psqlDatabases, binaryPath, postTableName)
 
