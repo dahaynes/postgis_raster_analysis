@@ -38,6 +38,52 @@ def LoadBinary(inParameters):
         #p.wait()
         #out, err = p.communicate()
 
+def PrepareSQLFile(sqlFilePath):
+    """
+    
+    This reads the existing sql file and removes the unwanted pieces
+    The raster2pgsql makes a large text file that uses a number of copy statements.
+    I seem to encountering some time out issue, between the multiprocessing and psql using the regular loading process
+    """
+    
+    with open(sqlFilePath, "r+") as fin:
+        dataset = fin.readlines()
+        fin.seek(0)
+        for line in dataset:
+            if len(line.split("\t")) == 2:
+                fin.write(line)
+        fin.truncate()
+
+def LoadSQLFile(inParameters):
+    """
+    
+    Example create table statement
+    #CREATE TABLE "glc_garbage" ("rid" serial PRIMARY KEY,"rast" raster,"filename" text);
+    """
+       
+    import psycopg2
+
+    databaseName =  inParameters[2]
+    psqlRasterTableName = inParameters[1]
+    sqlFilePath = inParameters[0]
+    
+    conn = psycopg2.connect(dbname=databaseName, user="david")
+    cur = conn.cursor()
+    cur.execute("DROP TABLE IF EXISTS %s" % (psqlRasterTableName))
+    
+    cur.execute("""CREATE TABLE %s (rid serial PRIMARY KEY, rast raster, filename text);""" % (psqlRasterTableName) ) 
+    conn.commit()    
+    
+    print("Copying file")
+    with open(sqlFilePath, "r") as fin:
+        cur.copy_from(fin, psqlRasterTableName, sep="\t", columns=("rast", "filename"))
+    print("Raster data loaded, adding constraints")
+    cur.execute("CREATE INDEX ON %s USING gist (st_convexhull(rast));" % (psqlRasterTableName) )
+    cur.execute("ANALYZE %s;" % (psqlRasterTableName) )
+    cur.execute("SELECT AddRasterConstraints('','%s','rast',TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,FALSE,TRUE,TRUE,TRUE,TRUE,FALSE); " % psqlRasterTableName)
+   
+    conn.close()
+
 
 def MultiProcessLoading(psqlInstances, binaryFilePath, psqlTableName):
     """
@@ -47,7 +93,7 @@ def MultiProcessLoading(psqlInstances, binaryFilePath, psqlTableName):
     pool = mp.Pool(len(psqlInstances), maxtasksperchild=1)    #Multiprocessing module
 
     try:
-        results = pool.imap(LoadBinary, ((binaryFilePath,psqlTableName, i) for i in psqlInstances) )
+        results = pool.imap(LoadSQLFile, ((binaryFilePath,psqlTableName, i) for i in psqlInstances) )
     except:
         print(mp.get_logger())
 
