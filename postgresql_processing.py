@@ -28,13 +28,18 @@ class postgis (object):
         """
         Method to close down the postgresql connection. 
         """
-        self.connection.close()              
+        try:
+            if self.connection: self.connection.close() 
+        except AttributeError:
+            pass
+             
     
     def DropConnection(self):
         """
         Method to close down the postgresql connection. 
         """
         self.connection.close()  
+        del self.connection
         
         
     def GetConnection(self, theConnectionDict):
@@ -43,6 +48,15 @@ class postgis (object):
         """
         connection = self.psy.connect(host=theConnectionDict['host'], database=theConnectionDict['db'], port=theConnectionDict['port'], user=theConnectionDict['user'])
         return connection
+    
+    def ParallelAnalysis(self, parameters):
+        """
+        
+        """
+        print("Here")
+        print(parameters)
+        #conn = self.GetConnection()
+        
     
     def Query(self, theQuery):
         """
@@ -81,10 +95,7 @@ class postgis (object):
         """
         from itertools import cycle
         from math import floor
-        
-        start = len(results)
-        finish = 0
-        
+              
         if partitions > 1:
             
             chunks = floor(len(results)/partitions)
@@ -134,22 +145,56 @@ class postgis (object):
                 
         else:
             return results
-            
     
+    def PickleParameters(self, query, db):
+
+        """
+        Generator for the class
+        Input: 
+        scidbInstance = SciDB Instance IDs
+        rasterFilePath = Absolute Path to the GeoTiff
+        """
+        import itertools
+        
+        for query, n in zip(db, itertools.repeat(query)):
+            yield query, n
+    
+    def ParallelAnalysis(parameters):
+        """
+        
+        """
+        print("Here")
+        print(parameters)
+        #conn = self.GetConnection()
+
+    def ParallelQuery(self, theQuery ):
+        """
+        This function creates breaks up a single PostgreSQL query across a variety of Nodes (Postgresql instances)
+        """
+     
+        import multiprocessing as mp
+        import itertools
+        
+        pool = mp.Pool(len(self.connectionDict['nodes']), maxtasksperchild=1)    #Multiprocessing module
+                    
+        
+        pool.map(ParallelAnalysis, [1,2] )
+        pool.close()
+        pool.join()
+
+             
+#            if results:
+#                print(results, dir(results))
+#                timeDictionary  = {str(i[0]):{"version": i[0], "writeTime": i[1], "loadTime": i[2] } for i in results}
+#    
+#                return timeDictionary    
 
 
 
 
-connectionInfo={"host": "localhost", "db": "research", "user": "david", "port": 5432, "nodes": [1]}
+connectionInfo={"host": "localhost", "db": "research", "user": "david", "port": 5432, "nodes": [1,2]}
 
 m = postgis(connectionInfo)
-
-
-records = m.Query("SELECT * from geometry_columns")
-dataset = m.PartitionResults(records, 2)
-m.DropConnection()
-
-
 
 query = """With boundary as 
 (
@@ -160,3 +205,11 @@ FROM states p
 SELECT p.id, array_agg(r.rid)
 FROM boundary p inner join nlcd_2006 r on ST_Intersects(r.rast, p.geom)
 GROUP BY p.id"""
+
+records = m.Query("SELECT * FROM raster_columns")
+dataset = m.PartitionResults(records, 2)
+m.DropConnection()
+m.ParallelQuery("SELECT * FROM raster_columns")
+
+
+
