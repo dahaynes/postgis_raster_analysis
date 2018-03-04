@@ -6,7 +6,7 @@ Created on Thu Dec  7 16:27:55 2017
 """
 
 import multiprocessing as mp
-import psycopg2, timeit
+import psycopg2, timeit, csv
 from postgresql_processing import postgis
 from copy import deepcopy
 
@@ -119,45 +119,74 @@ def ParallelQuery(psqlInstances, theConnectionInfos, theQueries):
         stop = timeit.default_timer()  
         print("Parallel Query Time %s" % (stop-start) )
         
-        
+def datasetprep():
+    """
+
+    """
+
+    chunksizes = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 3500, 4000]
+    raster_tables = ["glc","meris", "nlcd"]
+    boundaries = ["regions","states","counties","tracts"]
+
+    rasterTables =  [ raster_table = "%s_%s" % (raster, chunk) for raster in rastertables for chunk in chunksizes ]        
+
+    boundaryNames = [ b if "nlcd" in r else "%s_proj" % b for r in raster_table ]
+
+    # for r in raster_tables:
+    #     for b in boundaries:
+    #         if "nlcd" in r:
+    #             boundaryName = "%s_proj" % b
+    #         else:
+    #             boun
+
+    return rasterTables, boundaryNames
 
 if __name__ == '__main__':
-    start = timeit.default_timer()        
-    connectionInfo={"host": "localhost", "db": "master", "user": "david", "port": 5432, "nodes": ["node1","node2"], "boundary_table": "states", "raster_table": "glc_250"}
-    m = postgis(connectionInfo)
 
-    query = """SELECT p.id, name, replace(replace(array_agg(r.rid)::text, '{', ''), '}', '') as raster_ids FROM states p inner join glc_250 r on ST_Intersects(r.rast, p.geom) GROUP BY p.id, name"""
-    records = m.Query(query)
-    m.DropConnection()
-
-    psqlInstances = len(connectionInfo['nodes'])
-    p_records = m.PartitionResults(records,psqlInstances)
-    nodeRecords = GroupRecordsByNode(p_records)
-
-
-    queryText = """ SELECT p.id, p.name, (ST_SummaryStatsAgg(ST_Clip(r.rast, p.geom), 1, True)).* 
-    FROM {boundary_table} p inner join {raster_table} r on ST_Intersects(r.rast, p.geom) 
-    WHERE r.rid IN ( {raster_ids} ) AND p.name IN ( {place_names}) 
-    GROUP BY p.id, p.name """
-
-    p_queries = CreateNodeQueries(queryText, nodeRecords)
-
-    if p_records:
-        nodeConnections = []
-        for n in connectionInfo['nodes']:
-            nodeConnection = deepcopy(connectionInfo)
-            nodeConnection['db'] = n
-            nodeConnections.append(nodeConnection)
-
-
-        stopPrep = timeit.default_timer()  
-        ParallelQuery(psqlInstances, nodeConnections, p_queries)
-    else:
-        print("No Records returned in original query")
-        print(query)
+    rasterTables, boundaryNames = datasetprep()
+    runs = [1,2,3]
     
+    for r in runs:
+        start = timeit.default_timer()        
+        connectionInfo={"host": "localhost", "db": "master", "user": "david", "port": 5432, "nodes": ["node1","node2"], "boundary_table": "states", "raster_table": "glc_250"}
+        m = postgis(connectionInfo)
 
-    
-    stop = timeit.default_timer()  
-    print("Data Prep Time %s" % (stopPrep-start))
-    print("TotalTime %s" % (stop-start))
+        query = """SELECT p.id, name, replace(replace(array_agg(r.rid)::text, '{', ''), '}', '') as raster_ids FROM states p inner join glc_250 r on ST_Intersects(r.rast, p.geom) GROUP BY p.id, name"""
+        records = m.Query(query)
+        m.DropConnection()
+
+        psqlInstances = len(connectionInfo['nodes'])
+        p_records = m.PartitionResults(records,psqlInstances)
+        nodeRecords = GroupRecordsByNode(p_records)
+
+
+        queryText = """ SELECT p.id, p.name, (ST_SummaryStatsAgg(ST_Clip(r.rast, p.geom), 1, True)).* 
+        FROM {boundary_table} p inner join {raster_table} r on ST_Intersects(r.rast, p.geom) 
+        WHERE r.rid IN ( {raster_ids} ) AND p.name IN ( {place_names}) 
+        GROUP BY p.id, p.name """
+
+        p_queries = CreateNodeQueries(queryText, nodeRecords)
+
+        if p_records:
+            nodeConnections = []
+            for n in connectionInfo['nodes']:
+                nodeConnection = deepcopy(connectionInfo)
+                nodeConnection['db'] = n
+                nodeConnections.append(nodeConnection)
+
+
+            stopPrep = timeit.default_timer()  
+            ParallelQuery(psqlInstances, nodeConnections, p_queries)
+        else:
+            print("No Records returned in original query")
+            print(query)
+        
+
+        
+        stop = timeit.default_timer()  
+        print("Data Prep Time %s" % (stopPrep-start))
+        print("TotalTime %s" % (stop-start))
+
+    with open(outcsv, 'w') as fout:
+        thecsv = csv.writer(fout):
+
