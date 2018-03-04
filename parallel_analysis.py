@@ -9,6 +9,7 @@ import multiprocessing as mp
 import psycopg2, timeit, csv
 from postgresql_processing import postgis
 from copy import deepcopy
+from collections import OrderedDict
 
 def GenerateParameters(aDictionary, queryList):
 
@@ -119,69 +120,97 @@ def ParallelQuery(psqlInstances, theConnectionInfos, theQueries):
         stop = timeit.default_timer()  
         print("Parallel Query Time %s" % (stop-start) )
         
-def datasetprep():
+def datasetprep(numNodes=2):
     """
     Function will return all the possible combinations of dastes for analysis
     rasterTables = (raster dataset * tile size) 
-    boundaryNames = same length 
+    boundaryNames = All boundaries to test against 
     """
-    from collections import OrderedDict
+    
 
     chunksizes = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 3500, 4000]
     raster_tables = ["glc","meris", "nlcd"]
     boundaries = ["regions","states","counties","tracts"]
+    nodes = ["node%s" % n for n in range(1,numNodes+1)]
 
     rasterTables =  [ "%s_%s" % (raster, chunk) for raster in rastertables for chunk in chunksizes ]        
 
-    boundaryNames = [ OrderedDict(("boundary_table", b),("raster_table", r) ) if "nlcd" in r else OrderedDict(("boundary_table", "%s_proj" % b),("raster_table", r) ) for r in raster_table for b in boundaries ]
+    datasetRuns = [ OrderedDict([("boundary_table", b),("raster_table", r), ("nodes", nodes)] ) if "nlcd" in r else OrderedDict([("boundary_table", "%s_proj" % b),("raster_table", r), ("nodes", nodes)] ) for r in rasterTables for b in boundaries ]
+
+    return datasetRuns
 
 
-    return rasterTables, boundaryNames
+def WriteFile(filePath, theDictionary):
+    """
+    This function writes out the dictionary as csv
+    """
+    
+    thekeys = list(theDictionary.keys())
+    
+    with open(filePath, 'w') as csvFile:
+        fields = list(theDictionary[thekeys[0]].keys())
+        theWriter = csv.DictWriter(csvFile, fieldnames=fields)
+        theWriter.writeheader()
+
+        for k in theDictionary.keys():
+            theWriter.writerow(theDictionary[k])
 
 if __name__ == '__main__':
 
-    rasterTables, boundaryNames = datasetprep()
+    testingDatasets = datasetprep()
     runs = [1,2,3]
+    timings = OrderedDict()
+    analytic = 0
+    filepath = ''
 
-    for r in runs:
-        start = timeit.default_timer()        
-        connectionInfo={"host": "localhost", "db": "master", "user": "david", "port": 5432, "nodes": ["node1","node2"], "boundary_table": "states", "raster_table": "glc_250"}
-        m = postgis(connectionInfo)
+    for dataset in testingDatasets:
+        for r in runs:
+            start = timeit.default_timer()        
+            connectionInfo={"host": "localhost", "db": "master", "user": "david", "port": 5432} # "nodes": ["node1","node2"], "boundary_table": "states", "raster_table": "glc_250"}
+            
+            for d in dataset:
+                connectionInfo[d] = testingDatasets[datasets][d]
 
-        query = """SELECT p.id, name, replace(replace(array_agg(r.rid)::text, '{', ''), '}', '') as raster_ids FROM states p inner join glc_250 r on ST_Intersects(r.rast, p.geom) GROUP BY p.id, name"""
-        records = m.Query(query)
-        m.DropConnection()
+            m = postgis(connectionInfo)
 
-        psqlInstances = len(connectionInfo['nodes'])
-        p_records = m.PartitionResults(records,psqlInstances)
-        nodeRecords = GroupRecordsByNode(p_records)
+            query = """SELECT p.id, name, replace(replace(array_agg(r.rid)::text, '{', ''), '}', '') as raster_ids FROM states p inner join glc_250 r on ST_Intersects(r.rast, p.geom) GROUP BY p.id, name"""
+            records = m.Query(query)
+            m.DropConnection()
 
-        queryText = """ SELECT p.id, p.name, (ST_SummaryStatsAgg(ST_Clip(r.rast, p.geom), 1, True)).* 
-        FROM {boundary_table} p inner join {raster_table} r on ST_Intersects(r.rast, p.geom) 
-        WHERE r.rid IN ( {raster_ids} ) AND p.name IN ( {place_names}) 
-        GROUP BY p.id, p.name """
+            psqlInstances = len(connectionInfo['nodes'])
+            p_records = m.PartitionResults(records,psqlInstances)
+            nodeRecords = GroupRecordsByNode(p_records)
 
-        p_queries = CreateNodeQueries(queryText, nodeRecords)
+            queryText = """ SELECT p.id, p.name, (ST_SummaryStatsAgg(ST_Clip(r.rast, p.geom), 1, True)).* 
+            FROM {boundary_table} p inner join {raster_table} r on ST_Intersects(r.rast, p.geom) 
+            WHERE r.rid IN ( {raster_ids} ) AND p.name IN ( {place_names}) 
+            GROUP BY p.id, p.name """
 
-        if p_records:
-            nodeConnections = []
-            for n in connectionInfo['nodes']:
-                nodeConnection = deepcopy(connectionInfo)
-                nodeConnection['db'] = n
-                nodeConnections.append(nodeConnection)
+            p_queries = CreateNodeQueries(queryText, nodeRecords)
+
+            if p_records:
+                nodeConnections = []
+                for n in connectionInfo['nodes']:
+                    nodeConnection = deepcopy(connectionInfo)
+                    nodeConnection['db'] = n
+                    nodeConnections.append(nodeConnection)
 
 
-            stopPrep = timeit.default_timer()  
-            ParallelQuery(psqlInstances, nodeConnections, p_queries)
-        else:
-            print("No Records returned in original query")
-            print(query)
-        
-        
-        stop = timeit.default_timer()  
-        print("Data Prep Time %s" % (stopPrep-start))
-        print("TotalTime %s" % (stop-start))
+                stopPrep = timeit.default_timer()  
+                ParallelQuery(psqlInstances, nodeConnections, p_queries)
+            else:
+                print("No Records returned in original query")
+                print(query)
+            
+            
+            stop = timeit.default_timer()  
+            print("Data Prep Time %s" % (stopPrep-start))
+            print("TotalTime %s" % (stop-start))
 
-    with open(outcsv, 'w') as fout:
-        thecsv = csv.writer(fout):
+            analytic += 1
+
+            timings[analytic] = OrderedDict( [("connectionInfo", "XSEDE"), ("run", r), ("numNodes", len(connectionInfo["nodes"]) ), ("raster_table", connectionInfo["raster_table"]), ("boundary_table", connectionInfo["boundary_table"])] )
+    
+    if filePath: WriteFile(filePath, timings)
+    print("Finished")
 
