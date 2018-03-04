@@ -121,23 +121,20 @@ def ParallelQuery(psqlInstances, theConnectionInfos, theQueries):
         
 def datasetprep():
     """
-
+    Function will return all the possible combinations of dastes for analysis
+    rasterTables = (raster dataset * tile size) 
+    boundaryNames = same length 
     """
+    from collections import OrderedDict
 
     chunksizes = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 3500, 4000]
     raster_tables = ["glc","meris", "nlcd"]
     boundaries = ["regions","states","counties","tracts"]
 
-    rasterTables =  [ raster_table = "%s_%s" % (raster, chunk) for raster in rastertables for chunk in chunksizes ]        
+    rasterTables =  [ "%s_%s" % (raster, chunk) for raster in rastertables for chunk in chunksizes ]        
 
-    boundaryNames = [ b if "nlcd" in r else "%s_proj" % b for r in raster_table ]
+    boundaryNames = [ OrderedDict(("boundary_table", b),("raster_table", r) ) if "nlcd" in r else OrderedDict(("boundary_table", "%s_proj" % b),("raster_table", r) ) for r in raster_table for b in boundaries ]
 
-    # for r in raster_tables:
-    #     for b in boundaries:
-    #         if "nlcd" in r:
-    #             boundaryName = "%s_proj" % b
-    #         else:
-    #             boun
 
     return rasterTables, boundaryNames
 
@@ -145,7 +142,7 @@ if __name__ == '__main__':
 
     rasterTables, boundaryNames = datasetprep()
     runs = [1,2,3]
-    
+
     for r in runs:
         start = timeit.default_timer()        
         connectionInfo={"host": "localhost", "db": "master", "user": "david", "port": 5432, "nodes": ["node1","node2"], "boundary_table": "states", "raster_table": "glc_250"}
@@ -158,7 +155,6 @@ if __name__ == '__main__':
         psqlInstances = len(connectionInfo['nodes'])
         p_records = m.PartitionResults(records,psqlInstances)
         nodeRecords = GroupRecordsByNode(p_records)
-
 
         queryText = """ SELECT p.id, p.name, (ST_SummaryStatsAgg(ST_Clip(r.rast, p.geom), 1, True)).* 
         FROM {boundary_table} p inner join {raster_table} r on ST_Intersects(r.rast, p.geom) 
@@ -181,7 +177,6 @@ if __name__ == '__main__':
             print("No Records returned in original query")
             print(query)
         
-
         
         stop = timeit.default_timer()  
         print("Data Prep Time %s" % (stopPrep-start))
