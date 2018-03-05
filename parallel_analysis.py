@@ -166,7 +166,7 @@ if __name__ == '__main__':
     for dataset in testingDatasets:
         for r in runs:
             start = timeit.default_timer()        
-            connectionInfo={"host": "localhost", "db": "master", "user": "david", "port": 5432} # "nodes": ["node1","node2"], "boundary_table": "states", "raster_table": "glc_250"}
+            connectionInfo={"db": "master", "user": "david", "port": 5432} # "nodes": ["node1","node2"], "boundary_table": "states", "raster_table": "glc_250"}
             
             for d in dataset:
                 connectionInfo[d] = testingDatasets[datasets][d]
