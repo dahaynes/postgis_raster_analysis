@@ -36,7 +36,7 @@ def GroupRecordsByNode(partitionedRecords):
 
     return nodeRecords
 
-def CreateNodeQueries(partitionedQuery, nodeRecords):
+def CreateNodeQueries(partitionedQuery, nodeRecords, dataTables):
     """
     This function will create the paritioned query that you need to send to each node.
     """
@@ -46,8 +46,12 @@ def CreateNodeQueries(partitionedQuery, nodeRecords):
         rasterIDString = ",".join(nodeRecords[node]["raster_ids"])
         uniqueID = ",".join(list(set(rasterIDString.split(","))))
         nodeData[node] = {"place_names": nameString, "raster_ids": uniqueID}
-        
-    queries = [partitionedQuery.format(**connectionInfo, **nodeData[n]).replace("\n","") for n in nodeData]
+
+        for d in dataTables.keys():
+            # print(d)
+            nodeData[node][d] = dataTables[d]
+     
+    queries = [partitionedQuery.format( **nodeData[n]).replace("\n","") for n in nodeData]
 
     return queries
     
@@ -57,7 +61,7 @@ def CreateConnection(theConnectionDict):
     This method will get a connection. Need to make sure that the DB is set correctly.
     """
     
-    connection = psycopg2.connect(host=theConnectionDict['host'], database=theConnectionDict['db'], port=theConnectionDict['port'], user=theConnectionDict['user'])
+    connection = psycopg2.connect(database=theConnectionDict['db'], user=theConnectionDict['user'])
 
     return connection
 
@@ -84,8 +88,9 @@ def NodeQuery(inParameters):
             cur = conn.cursor()
             # cur = conn.cursor(cursor_factory=extras.RealDictCursor)
             cur.execute(sqlQuery)
-        except Exception as e:
-            print("ERROR", cur.query)
+
+        except psycopg2.Error as e:
+            print(e.pgerror)
         else:
             return cur.fetchall()
 
@@ -128,14 +133,14 @@ def datasetprep(numNodes=2):
     """
     
 
-    chunksizes = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 3500, 4000]
-    raster_tables = ["glc","meris", "nlcd"]
-    boundaries = ["regions","states","counties","tracts"]
+    chunksizes = [50,100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 3500, 4000]
+    raster_tables = ["glc_2000_clipped", "meris_2015_clipped", "nlcd_2006_clipped"] #glc_2010_clipped_400 nlcd_2006_clipped_2500
+    boundaries = ["states","regions","counties","tracts"]
     nodes = ["node%s" % n for n in range(1,numNodes+1)]
 
-    rasterTables =  [ "%s_%s" % (raster, chunk) for raster in rastertables for chunk in chunksizes ]        
+    rasterTables =  [ "%s_%s" % (raster, chunk) for raster in raster_tables for chunk in chunksizes ]        
 
-    datasetRuns = [ OrderedDict([("boundary_table", b),("raster_table", r), ("nodes", nodes)] ) if "nlcd" in r else OrderedDict([("boundary_table", "%s_proj" % b),("raster_table", r), ("nodes", nodes)] ) for r in rasterTables for b in boundaries ]
+    datasetRuns = [ OrderedDict([("boundary_table", "%s_proj" % b),("raster_table", r), ("nodes", nodes)] ) if "nlcd" in r else OrderedDict([("boundary_table", b),("raster_table", r), ("nodes", nodes)] ) for r in rasterTables for b in boundaries ]
 
     return datasetRuns
 
@@ -158,35 +163,38 @@ def WriteFile(filePath, theDictionary):
 if __name__ == '__main__':
 
     testingDatasets = datasetprep()
-    runs = [1,2,3]
+    runs = [1]#,2,3]
     timings = OrderedDict()
     analytic = 0
-    filepath = ''
+    filePath = '/home/04489/dhaynes/postgresql_3_5_2018.csv'
 
     for dataset in testingDatasets:
         for r in runs:
+            print(dataset)
             start = timeit.default_timer()        
-            connectionInfo={"host": "localhost", "db": "master", "user": "david", "port": 5432} # "nodes": ["node1","node2"], "boundary_table": "states", "raster_table": "glc_250"}
+            connectionInfo={"db": "master", "user": "dhaynes", "port": 5432} #"nodes": ["node1","node2"], "boundary_table": "states", "raster_table": "glc_250"}
             
             for d in dataset:
-                connectionInfo[d] = testingDatasets[datasets][d]
-
+                connectionInfo[d] = dataset[d]
+     
             m = postgis(connectionInfo)
-
-            query = """SELECT p.id, name, replace(replace(array_agg(r.rid)::text, '{', ''), '}', '') as raster_ids FROM states p inner join glc_250 r on ST_Intersects(r.rast, p.geom) GROUP BY p.id, name"""
-            records = m.Query(query)
+           
+            selectStatement = """SELECT gid, name, replace(replace(array_agg(r.rid)::text, '{', ''), '}', '') as raster_ids"""
+            fromStatement = """FROM {boundary_table} p inner join {raster_table} r on ST_Intersects(r.rast, p.geom) GROUP BY p.gid, name""".format(**connectionInfo)
+            query = "%s %s" % (selectStatement, fromStatement)
+            records = m.Query(query )
             m.DropConnection()
-
+            jnk ={"raster_ids": '[1,2,3]', "place_names": '[Alaska]'}
             psqlInstances = len(connectionInfo['nodes'])
             p_records = m.PartitionResults(records,psqlInstances)
             nodeRecords = GroupRecordsByNode(p_records)
-
-            queryText = """ SELECT p.id, p.name, (ST_SummaryStatsAgg(ST_Clip(r.rast, p.geom), 1, True)).* 
+            # print(nodeRecords)
+            queryText = """ SELECT p.gid, p.name, (ST_SummaryStatsAgg(ST_Clip(r.rast, p.geom), 1, True)).* 
             FROM {boundary_table} p inner join {raster_table} r on ST_Intersects(r.rast, p.geom) 
-            WHERE r.rid IN ( {raster_ids} ) AND p.name IN ( {place_names}) 
-            GROUP BY p.id, p.name """
-
-            p_queries = CreateNodeQueries(queryText, nodeRecords)
+            WHERE r.rid IN ( {raster_ids} ) AND p.name IN ( {place_names} ) 
+            GROUP BY p.gid, p.name """
+            # print(queryText)
+            p_queries = CreateNodeQueries(queryText, nodeRecords, connectionInfo)
 
             if p_records:
                 nodeConnections = []
@@ -210,7 +218,7 @@ if __name__ == '__main__':
             analytic += 1
 
             timings[analytic] = OrderedDict( [("connectionInfo", "XSEDE"), ("run", r), ("numNodes", len(connectionInfo["nodes"]) ), ("raster_table", connectionInfo["raster_table"]), ("boundary_table", connectionInfo["boundary_table"])] )
-    
+            break
     if filePath: WriteFile(filePath, timings)
     print("Finished")
 

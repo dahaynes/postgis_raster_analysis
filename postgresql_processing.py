@@ -16,7 +16,7 @@ class postgis(object):
         try:
             self.connection = self.GetConnection(connectionDict)
             self.cursor = self.connection.cursor(cursor_factory=extras.DictCursor)
-            
+
         except psycopg2.Error as e:
             print(e.pgerror)           
         
@@ -46,7 +46,7 @@ class postgis(object):
         """
         This method will get a connection. Need to make sure that the DB is set correctly.
         """
-        connection = self.psy.connect(host=theConnectionDict['host'], database=theConnectionDict['db'], port=theConnectionDict['port'], user=theConnectionDict['user'])
+        connection = self.psy.connect(database=theConnectionDict['db'], user=theConnectionDict['user'])
         return connection
     
     def ParallelAnalysis(self, parameters):
