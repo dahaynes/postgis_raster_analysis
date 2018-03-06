@@ -46,7 +46,9 @@ class postgis(object):
         """
         This method will get a connection. Need to make sure that the DB is set correctly.
         """
+
         connection = self.psy.connect(database=theConnectionDict['db'], user=theConnectionDict['user'])
+
         return connection
     
     def ParallelAnalysis(self, parameters):
@@ -107,13 +109,7 @@ class postgis(object):
                 resultsDict = {x:results[x] for x in range(i, i + chunks) if x < len(results)}
                 #When range is 0,0 we don't want to return something
                 if resultsDict:
-                    outDict[i] = resultsDict
-                                       
-            #outDictLength = {r: len(outDict[r].keys()) for r in outDict }
-            
-            #theExtraKey, num_records = min(outDictLength.items(), key = lambda t: t[1])
-            #if num_records == 0: finish = sum([len(outDict[d].keys()) for d in outDict])
-                                          
+                    outDict[i] = resultsDict   
                                     
             if len(results)%partitions:
                 # print("Extra")
@@ -131,15 +127,5 @@ class postgis(object):
         else:
             return results
         
-
-
-    
-
-
-
-
-
-
-
 
 

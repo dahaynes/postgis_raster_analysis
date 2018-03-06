@@ -172,6 +172,7 @@ if __name__ == '__main__':
         for r in runs:
             print(dataset)
             start = timeit.default_timer()        
+
             connectionInfo={"db": "master", "user": "dhaynes", "port": 5432} #"nodes": ["node1","node2"], "boundary_table": "states", "raster_table": "glc_250"}
             
             for d in dataset:
