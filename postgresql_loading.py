@@ -134,3 +134,8 @@ def argument_parser():
 if __name__ == '__main__':
     args = argument_parser().parse_args()
     Main(args.filepath, args.tablename, args.binarypath, args.srid, args.tilesize)
+
+
+
+iuwrang-c101.uits.indiana.edu(5)$ ./LoadPostgres.sh -s 5070 -r ../ncld_2006.tif -t nlcd_2006
+raster2pgsql -C -x -I -Y -F -t 50x50 -s 5070 ../ncld_2006.tif nlcd_2006_50_50 > /data/04489/dhaynes/nlcd_2006_50.sql

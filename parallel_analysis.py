@@ -7,7 +7,7 @@ Created on Thu Dec  7 16:27:55 2017
 
 import multiprocessing as mp
 import psycopg2, timeit, csv
-from postgresql_processing import postgis
+from postgresql_processing import psqlLib
 from copy import deepcopy
 from collections import OrderedDict
 
@@ -100,6 +100,24 @@ def NodeQuery(inParameters):
     else:
         print("No Connection Made")
 
+def FeaturePartitionAssignment():
+    """
+    This function is defunct.
+    """
+    selectStatement = """SELECT gid, name, replace(replace(array_agg(r.rid)::text, '{', ''), '}', '') as raster_ids"""
+    fromStatement = """FROM {boundary_table} p inner join {raster_table} r on ST_Intersects(r.rast, p.geom) GROUP BY p.gid, name""".format(**connectionInfo)
+    query = "%s %s" % (selectStatement, fromStatement)
+    records = m.Query(query )
+    m.DropConnection()
+    jnk ={"raster_ids": '[1,2,3]', "place_names": '[Alaska]'}
+    psqlInstances = len(connectionInfo['nodes'])
+    p_records = m.PartitionResults(records,psqlInstances)
+    nodeRecords = GroupRecordsByNode(p_records)
+    # print(nodeRecords)
+    queryText = """ SELECT p.gid, p.name, (ST_SummaryStatsAgg(ST_Clip(r.rast, p.geom), 1, True)).* 
+    FROM {boundary_table} p inner join {raster_table} r on ST_Intersects(r.rast, p.geom) 
+    WHERE r.rid IN ( {raster_ids} ) AND p.name IN ( {place_names} ) 
+    GROUP BY p.gid, p.name """
    
 
 def ParallelQuery(psqlInstances, theConnectionInfos, theQueries):
@@ -133,8 +151,8 @@ def datasetprep(numNodes=2):
     """
     
 
-    chunksizes = [50,100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 3500, 4000]
-    raster_tables = ["glc_2000_clipped", "meris_2015_clipped", "nlcd_2006_clipped"] #glc_2010_clipped_400 nlcd_2006_clipped_2500
+    chunksizes = [100]#[50,100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 3500, 4000]
+    raster_tables = ["glc2000"] #["glc_2000_clipped", "meris_2015_clipped", "nlcd_2006_clipped"] #glc_2010_clipped_400 nlcd_2006_clipped_2500
     boundaries = ["states","regions","counties","tracts"]
     nodes = ["node%s" % n for n in range(1,numNodes+1)]
 
@@ -144,6 +162,29 @@ def datasetprep(numNodes=2):
 
     return datasetRuns
 
+
+def ParallelZonalAnalysis(connectDict, nodeDatasets):
+
+    master = psqlLib(connectDict)
+    nodeRasterTableIds = master.PartitionRaster(connectDict["raster_table"],len(connectDict["nodes"]) )
+    
+    print(nodeRasterTableIds)
+    print(nodeDatasets)
+    
+    nodeQueries = []
+    for n, node in enumerate(nodeDatasets['nodes']):
+        
+        selectStatement = """
+        SELECT p.gid, p.name, (ST_SummaryStatsAgg(ST_Clip(r.rast, p.geom), 1, True)).* 
+        FROM {boundary_table} p inner join {raster_table} r on ST_Intersects(r.rast, p.geom) """.format(**nodeDatasets)
+        betweenStatement = """ 
+        WHERE r.rid BETWEEN {min} AND {max} 
+        GROUP BY p.gid, p.name""".format(**nodeRasterTableIds[n])
+        query = selectStatement.replace("\n","") + betweenStatement.replace("\n","")
+        nodeQueries.append(query)   
+
+    return nodeQueries
+            
 
 def WriteFile(filePath, theDictionary):
     """
@@ -173,31 +214,23 @@ if __name__ == '__main__':
             print(dataset)
             start = timeit.default_timer()        
 
-            connectionInfo={"db": "master", "user": "dhaynes", "port": 5432} #"nodes": ["node1","node2"], "boundary_table": "states", "raster_table": "glc_250"}
+            connectionInfo={"db": "master", "user": "david", "port": 5432} #"nodes": ["node1","node2"], "boundary_table": "states", "raster_table": "glc_250"}
             
             for d in dataset:
                 connectionInfo[d] = dataset[d]
      
-            m = postgis(connectionInfo)
-           
-            selectStatement = """SELECT gid, name, replace(replace(array_agg(r.rid)::text, '{', ''), '}', '') as raster_ids"""
-            fromStatement = """FROM {boundary_table} p inner join {raster_table} r on ST_Intersects(r.rast, p.geom) GROUP BY p.gid, name""".format(**connectionInfo)
-            query = "%s %s" % (selectStatement, fromStatement)
-            records = m.Query(query )
-            m.DropConnection()
-            jnk ={"raster_ids": '[1,2,3]', "place_names": '[Alaska]'}
+    
+            nodeQueries = ParallelZonalAnalysis(connectionInfo, dataset)
             psqlInstances = len(connectionInfo['nodes'])
-            p_records = m.PartitionResults(records,psqlInstances)
-            nodeRecords = GroupRecordsByNode(p_records)
-            # print(nodeRecords)
-            queryText = """ SELECT p.gid, p.name, (ST_SummaryStatsAgg(ST_Clip(r.rast, p.geom), 1, True)).* 
-            FROM {boundary_table} p inner join {raster_table} r on ST_Intersects(r.rast, p.geom) 
-            WHERE r.rid IN ( {raster_ids} ) AND p.name IN ( {place_names} ) 
-            GROUP BY p.gid, p.name """
-            # print(queryText)
-            p_queries = CreateNodeQueries(queryText, nodeRecords, connectionInfo)
+            #nodeRasterTableIds = {n: {"min": node.min(), "max": node.max() } for n, node in enumerate(nodeQueries) }
 
-            if p_records:
+            #print(nodeQueries)
+
+
+            # print(queryText)
+            #p_queries = CreateNodeQueries(queryText, nodeRecords, connectionInfo)
+
+            if nodeQueries:
                 nodeConnections = []
                 for n in connectionInfo['nodes']:
                     nodeConnection = deepcopy(connectionInfo)
@@ -206,11 +239,10 @@ if __name__ == '__main__':
 
 
                 stopPrep = timeit.default_timer()  
-                ParallelQuery(psqlInstances, nodeConnections, p_queries)
+                ParallelQuery(psqlInstances, nodeConnections, nodeQueries)
             else:
                 print("No Records returned in original query")
-                print(query)
-            
+                
             
             stop = timeit.default_timer()  
             print("Data Prep Time %s" % (stopPrep-start))

@@ -4,8 +4,9 @@ Created on Thu Dec  7 08:57:09 2017
 Class for paritioning information for a query.
 @author: dahaynes
 """
+import numpy as np
 
-class postgis(object):
+class psqlLib(object):
     
     def __init__(self, connectionDict):
         import psycopg2
@@ -50,15 +51,7 @@ class postgis(object):
         connection = self.psy.connect(database=theConnectionDict['db'], user=theConnectionDict['user'])
 
         return connection
-    
-    def ParallelAnalysis(self, parameters):
-        """
-        
-        """
-        print("Here")
-        print(parameters)
-        #conn = self.GetConnection()
-        
+            
     
     def Query(self, theQuery):
         """
@@ -126,6 +119,53 @@ class postgis(object):
                 
         else:
             return results
+
+    def PartitionRaster(self, raster_table, partitions=2):
+        """
+        This function is very light weight a
+        """
+
+        query = """With raster_tiles as
+        (
+        SELECT rid, split_part(split_part(ST_AsText(ST_ConvexHULL(rast)), ',', 1), ' ', 2) as y
+        -- ST_ConvexHULL(rast) as geom,
+        FROM %s
+        ORDER BY rid
+        ), raster_aggregates as
+        (
+        SELECT array_agg(rid) as raster_ids
+        FROM raster_tiles
+        GROUP by y
+        )
+        SELECT raster_ids[1] as min_tile_id , raster_ids[array_length(raster_ids, 1)] as max_tile_id
+        FROM raster_aggregates
+        ORDER by raster_ids[1]""" % (raster_table)
+        #print(query)
+
+        #self.connection = self.GetConnection(connectionDict)
+        cur = self.connection.cursor()
+        cur.execute(query)
+        dataset = cur.fetchall()
+
+        minTileParitionIds = [i[0] for i in dataset]
+        maxTileParitionIds = [i[1] for i in dataset]
+
+        #print(minTileParitionIds, maxTileParitionIds)
+
+        #t = np.column_stack((minTileParitionIds,maxTileParitionIds) )
+        #tileDataset = np.rec.array([minTileParitionIds, maxTileParitionIds], dtype=[('minTile','i8'),('maxTile','i8')])
+        #Can't put these into a single
+        min_max_Ids = np.column_stack( (minTileParitionIds,maxTileParitionIds) )
         
+        nodePartitionIds = np.array_split( min_max_Ids, partitions)
+        
+        nodeRasterTableIds = {n: {"min": node.min(), "max": node.max() } for n, node in enumerate(nodePartitionIds) }
+
+        return nodeRasterTableIds
+
+
+
+        
+                
 
 
