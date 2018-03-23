@@ -19,6 +19,24 @@ def GenerateParameters(aDictionary, queryList):
     for n, query in zip(aDictionary, queryList):
         yield aDictionary["host"], aDictionary["db"], aDictionary["user"], query
 
+def ZonalStats_MergeResults(someResults):
+    """
+
+    """                
+    finalResults = {}
+    for nodeResult in someResults:
+        for feature in nodeResult:
+            thekey = feature['gid']
+            if feature['gid'] in finalResults.keys():
+                finalResults[thekey]["min"] = min( feature["min"], finalResults[thekey]["min"])
+                finalResults[thekey]["max"] = max( feature["min"], finalResults[thekey]["min"])
+                finalResults[thekey]["count"] += feature[thekey]["count"]
+            else:
+                print("Adding key %s" % (thekey))
+                finalResults[thekey] = { "min": feature["min"], "max" : feature["max"], "count" : feature["count"]}
+    return finalResults
+
+    
 
 def GroupRecordsByNode(partitionedRecords): 
     """
@@ -78,15 +96,18 @@ def NodeQuery(inParameters):
     """
     This is the worker function that runs the query for every node specified    
     """
+    import psycopg2
+    from psycopg2 import extras
+    
     
     connectionDict = inParameters[0]
     sqlQuery = inParameters[1]
+    
     conn = CreateConnection(connectionDict)
     
     if conn:
         try:
-            cur = conn.cursor()
-            # cur = conn.cursor(cursor_factory=extras.RealDictCursor)
+            cur = conn.cursor(cursor_factory=extras.RealDictCursor)
             cur.execute(sqlQuery)
 
         except psycopg2.Error as e:
@@ -135,13 +156,13 @@ def ParallelQuery(psqlInstances, theConnectionInfos, theQueries):
         print(mp.get_logger())
     else:
         pass
-        #for r in results:
-            #print(r)
+
     finally:
         pool.close()
         pool.join()
         stop = timeit.default_timer()  
         print("Parallel Query Time %s" % (stop-start) )
+        return results
         
 def datasetprep(numNodes=2):
     """
@@ -151,9 +172,9 @@ def datasetprep(numNodes=2):
     """
     
 
-    chunksizes = [100]#[50,100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 3500, 4000]
-    raster_tables = ["glc2000"] #["glc_2000_clipped", "meris_2015_clipped", "nlcd_2006_clipped"] #glc_2010_clipped_400 nlcd_2006_clipped_2500
-    boundaries = ["states","regions","counties","tracts"]
+    chunksizes = [50]#[50,100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 3500, 4000]
+    raster_tables = ["glc2000_clipped"] #["glc_2000_clipped", "meris_2015_clipped", "nlcd_2006_clipped"] #glc_2010_clipped_400 nlcd_2006_clipped_2500
+    boundaries = ["states"] #,"regions","counties","tracts"]
     nodes = ["node%s" % n for n in range(1,numNodes+1)]
 
     rasterTables =  [ "%s_%s" % (raster, chunk) for raster in raster_tables for chunk in chunksizes ]        
@@ -207,7 +228,7 @@ if __name__ == '__main__':
     runs = [1]#,2,3]
     timings = OrderedDict()
     analytic = 0
-    filePath = '/home/04489/dhaynes/postgresql_3_5_2018.csv'
+    filePath = ''# '/home/04489/dhaynes/postgresql_3_5_2018.csv'
 
     for dataset in testingDatasets:
         for r in runs:
@@ -239,7 +260,9 @@ if __name__ == '__main__':
 
 
                 stopPrep = timeit.default_timer()  
-                ParallelQuery(psqlInstances, nodeConnections, nodeQueries)
+                results = ParallelQuery(psqlInstances, nodeConnections, nodeQueries)
+                finalstats = ZonalStats_MergeResults(results)
+                    
             else:
                 print("No Records returned in original query")
                 
@@ -251,7 +274,7 @@ if __name__ == '__main__':
             analytic += 1
 
             timings[analytic] = OrderedDict( [("connectionInfo", "XSEDE"), ("run", r), ("numNodes", len(connectionInfo["nodes"]) ), ("raster_table", connectionInfo["raster_table"]), ("boundary_table", connectionInfo["boundary_table"])] )
-            break
+
     if filePath: WriteFile(filePath, timings)
     print("Finished")
 
