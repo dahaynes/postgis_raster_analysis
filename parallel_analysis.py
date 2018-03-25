@@ -19,6 +19,13 @@ def GenerateParameters(aDictionary, queryList):
     for n, query in zip(aDictionary, queryList):
         yield aDictionary["host"], aDictionary["db"], aDictionary["user"], query
 
+def ValueEvaluator(val1, val2):
+    """
+    Determine 
+    """
+    pass
+
+
 def ZonalStats_MergeResults(someResults):
     """
 
@@ -27,13 +34,16 @@ def ZonalStats_MergeResults(someResults):
     for nodeResult in someResults:
         for feature in nodeResult:
             thekey = feature['gid']
-            if feature['gid'] in finalResults.keys():
-                finalResults[thekey]["min"] = min( feature["min"], finalResults[thekey]["min"])
-                finalResults[thekey]["max"] = max( feature["min"], finalResults[thekey]["min"])
-                finalResults[thekey]["count"] += feature[thekey]["count"]
-            else:
-                print("Adding key %s" % (thekey))
-                finalResults[thekey] = { "min": feature["min"], "max" : feature["max"], "count" : feature["count"]}
+            try:
+                if feature['gid'] in finalResults.keys():
+                    finalResults[thekey]["min"] = min( feature["min"], finalResults[thekey]["min"])
+                    finalResults[thekey]["max"] = max( feature["max"], finalResults[thekey]["max"])
+                    finalResults[thekey]["count"] += feature["count"]
+                else:
+                    #print("Adding key %s" % (thekey))
+                    finalResults[thekey] = { "min": feature["min"], "max" : feature["max"], "count" : feature["count"]}
+            except:
+                print(feature["min"], finalResults[thekey]["min"])
     return finalResults
 
     
@@ -172,9 +182,9 @@ def datasetprep(numNodes=2):
     """
     
 
-    chunksizes = [50]#[50,100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 3500, 4000]
-    raster_tables = ["glc2000_clipped"] #["glc_2000_clipped", "meris_2015_clipped", "nlcd_2006_clipped"] #glc_2010_clipped_400 nlcd_2006_clipped_2500
-    boundaries = ["states"] #,"regions","counties","tracts"]
+    chunksizes = [50,100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000]#, 2500, 3000, 3500, 4000]
+    raster_tables = ["glc_2000_clipped", "meris_2015_clipped", "nlcd_2006_clipped"] #glc_2010_clipped_400 nlcd_2006_clipped_2500
+    boundaries = ["states","regions","counties","tracts"]
     nodes = ["node%s" % n for n in range(1,numNodes+1)]
 
     rasterTables =  [ "%s_%s" % (raster, chunk) for raster in raster_tables for chunk in chunksizes ]        
@@ -190,7 +200,7 @@ def ParallelZonalAnalysis(connectDict, nodeDatasets):
     nodeRasterTableIds = master.PartitionRaster(connectDict["raster_table"],len(connectDict["nodes"]) )
     
     print(nodeRasterTableIds)
-    print(nodeDatasets)
+    #print(nodeDatasets)
     
     nodeQueries = []
     for n, node in enumerate(nodeDatasets['nodes']):
@@ -228,14 +238,14 @@ if __name__ == '__main__':
     runs = [1]#,2,3]
     timings = OrderedDict()
     analytic = 0
-    filePath = ''# '/home/04489/dhaynes/postgresql_3_5_2018.csv'
+    filePath = '/home/04489/dhaynes/postgresql_3_23_2018.csv'
 
     for dataset in testingDatasets:
         for r in runs:
             print(dataset)
             start = timeit.default_timer()        
 
-            connectionInfo={"db": "master", "user": "david", "port": 5432} #"nodes": ["node1","node2"], "boundary_table": "states", "raster_table": "glc_250"}
+            connectionInfo={"db": "master", "user": "dhaynes", "port": 5432} #"nodes": ["node1","node2"], "boundary_table": "states", "raster_table": "glc_250"}
             
             for d in dataset:
                 connectionInfo[d] = dataset[d]
