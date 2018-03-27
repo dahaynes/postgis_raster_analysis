@@ -19,12 +19,6 @@ def GenerateParameters(aDictionary, queryList):
     for n, query in zip(aDictionary, queryList):
         yield aDictionary["host"], aDictionary["db"], aDictionary["user"], query
 
-def ValueEvaluator(val1, val2):
-    """
-    Determine 
-    """
-    pass
-
 
 def ZonalStats_MergeResults(someResults):
     """
@@ -36,6 +30,7 @@ def ZonalStats_MergeResults(someResults):
             thekey = feature['gid']
             try:
                 if feature['gid'] in finalResults.keys():
+                    #Still having an issue wth the "min" value
                     finalResults[thekey]["min"] = min( feature["min"], finalResults[thekey]["min"])
                     finalResults[thekey]["max"] = max( feature["max"], finalResults[thekey]["max"])
                     finalResults[thekey]["count"] += feature["count"]
@@ -43,46 +38,10 @@ def ZonalStats_MergeResults(someResults):
                     #print("Adding key %s" % (thekey))
                     finalResults[thekey] = { "min": feature["min"], "max" : feature["max"], "count" : feature["count"]}
             except:
-                print(feature["min"], finalResults[thekey]["min"])
+                pass
+                #print(feature["min"], finalResults[thekey]["min"])
     return finalResults
 
-    
-
-def GroupRecordsByNode(partitionedRecords): 
-    """
-    This function will takes the partiioned records and groups their information by node.
-    """   
-    nodeRecords = {}
-    for group in partitionedRecords.keys():
-        placeNames = []
-        placeRasterIds = []    
-        for rec in partitionedRecords[group].keys():
-            placeNames.append("'%s'" % (partitionedRecords[group][rec]["name"]))
-            placeRasterIds.append(partitionedRecords[group][rec]["raster_ids"])
-            
-        nodeRecords[group] = {"name": placeNames, "raster_ids": placeRasterIds}
-
-    return nodeRecords
-
-def CreateNodeQueries(partitionedQuery, nodeRecords, dataTables):
-    """
-    This function will create the paritioned query that you need to send to each node.
-    """
-    nodeData = {}
-    for node in nodeRecords:
-        nameString = ",".join(nodeRecords[node]["name"])
-        rasterIDString = ",".join(nodeRecords[node]["raster_ids"])
-        uniqueID = ",".join(list(set(rasterIDString.split(","))))
-        nodeData[node] = {"place_names": nameString, "raster_ids": uniqueID}
-
-        for d in dataTables.keys():
-            # print(d)
-            nodeData[node][d] = dataTables[d]
-     
-    queries = [partitionedQuery.format( **nodeData[n]).replace("\n","") for n in nodeData]
-
-    return queries
-    
     
 def CreateConnection(theConnectionDict):
     """
@@ -93,14 +52,6 @@ def CreateConnection(theConnectionDict):
 
     return connection
 
-
-def ThreadedConnection(theConnectionDict):
-    """
-    This method will get a connection. Need to make sure that the DB is set correctly.
-    """
-    pooledConnect = pool.PersistentConnectionPool(1, 5, host=theConnectionDict['host'], database=theConnectionDict['db'], port=theConnectionDict['port'], user=theConnectionDict['user'])
-    
-    return pooledConnect
 
 def NodeQuery(inParameters):
     """
@@ -183,7 +134,7 @@ def datasetprep(numNodes=2):
     
 
     chunksizes = [50,100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000]#, 2500, 3000, 3500, 4000]
-    raster_tables = ["glc_2000_clipped", "meris_2015_clipped", "nlcd_2006_clipped"] #glc_2010_clipped_400 nlcd_2006_clipped_2500
+    raster_tables = ["glc_2000_clipped", "meris_2015_clipped", "nlcd_2006"] #glc_2010_clipped_400 nlcd_2006_clipped_2500
     boundaries = ["states","regions","counties","tracts"]
     nodes = ["node%s" % n for n in range(1,numNodes+1)]
 
@@ -195,11 +146,14 @@ def datasetprep(numNodes=2):
 
 
 def ParallelZonalAnalysis(connectDict, nodeDatasets):
+    """
+    Function for counting the number of pixels in a geographic feature
+    """
 
     master = psqlLib(connectDict)
     nodeRasterTableIds = master.PartitionRaster(connectDict["raster_table"],len(connectDict["nodes"]) )
     
-    print(nodeRasterTableIds)
+    #print(nodeRasterTableIds)
     #print(nodeDatasets)
     
     nodeQueries = []
@@ -213,6 +167,58 @@ def ParallelZonalAnalysis(connectDict, nodeDatasets):
         GROUP BY p.gid, p.name""".format(**nodeRasterTableIds[n])
         query = selectStatement.replace("\n","") + betweenStatement.replace("\n","")
         nodeQueries.append(query)   
+
+    return nodeQueries
+
+def ParallelPixelCount(connectDict, nodeDatasets, pixelValue):
+    """
+    Function for counting the number of pixels in a dataset
+    """
+    
+    master = psqlLib(connectDict)
+    nodeRasterTableIds = master.PartitionRaster(connectDict["raster_table"],len(connectDict["nodes"]) )
+    
+    nodeQueries = []
+    for n, node in enumerate(nodeDatasets['nodes']):
+
+        topQuery = """
+        With raster_value_count as
+        (
+        SELECT rid, (ST_ValueCount(rast)).*
+        FROM {raster_table}
+        """.format(**nodeDatasets)
+        bottomQuery = """
+        WHERE r.rid BETWEEN {min} AND {max}
+        """.format(**nodeRasterTableIds[n])
+        subquery = """
+        )
+        SELECT value, sum(count) as count
+        FROM raster_value_count
+        WHERE value = %s 
+        GROUP BY value
+        """ % (pixelValue)
+        query = topQuery + bottomQuery + subquery
+        nodeQueries.append(query)
+
+    return nodeQueries
+
+def ParallelReclassification(connectDict, nodeDatasets, pixelValue, reclassValue):
+    """
+    Function for reclassifying the raster dataset. Returning raster objects.
+    """
+    
+    master = psqlLib(connectDict)
+    nodeRasterTableIds = master.PartitionRaster(connectDict["raster_table"],len(connectDict["nodes"]) )
+    
+    nodeQueries = []
+    for n, node in enumerate(nodeDatasets['nodes']):
+
+        reclassQuery = """SELECT rid, ST_Reclass(rast, 1, '%s:%s', '8BUI', 0) """ % (pixelValue, reclassValue)
+        fromQuery = """FROM {raster_table} """.format(**nodeDatasets)
+        whereQuery = """WHERE r.rid BETWEEN {min} AND {max} """.format(**nodeRasterTableIds[n])
+
+        query = reclassQuery + fromQuery + whereQuery
+        nodeQueries.append(query) 
 
     return nodeQueries
             
@@ -232,8 +238,35 @@ def WriteFile(filePath, theDictionary):
         for k in theDictionary.keys():
             theWriter.writerow(theDictionary[k])
 
-if __name__ == '__main__':
+def argument_parser():
+    """
+    Parse arguments and return Arguments
+    """
+    import argparse
 
+    parser = argparse.ArgumentParser(description= "Analysis Script for running PostGIS Analytics")   
+    parser.add_argument("-n", required =True, type=int, help="Number of PostgreSQL Nodes", dest="nodes", default=2)    
+    parser.add_argument("-csv", required =False, help="Output timing results into CSV file", dest="csv", default="None")
+    
+    subparser = parser.add_subparsers(help='sub-command help')
+   
+    analytic_subparser = subparser.add_parser('zonal')
+    analytic_subparser.add_argument('-r', required=True, action='store_true', dest='raster')
+    analytic_subparser.add_argument('-v', required=True, action='store_true', dest='vector')
+
+    count_subparser = subparser.add_parser('count')
+    count_subparser.add_argument('-p', required=True, type=int,  help='pixel value', dest="pixelValue")
+    
+    reclass_subparser = subparser.add_parser('reclassify')
+    reclass_subparser.add_argument('-old', required=True, type=int,  help='pixel value', dest="oldPixel")
+    reclass_subparser.add_argument('-new', required=True, type=int,  help='pixel value', dest="newPixel")
+
+    return parser
+
+
+if __name__ == '__main__':
+    args = argument_parser().parse_args()
+    print(args)
     testingDatasets = datasetprep()
     runs = [1]#,2,3]
     timings = OrderedDict()
