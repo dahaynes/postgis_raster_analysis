@@ -129,8 +129,8 @@ def localDatasetPrep(numNodes=2):
     """
 
     """
-    chunksizes = [50,100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000, 2500, 3000, 3500, 4000]
-    raster_tables = ["glc_2000_clipped", "meris_2015_clipped", "nlcd_2006"] #glc_2010_clipped_400 nlcd_2006_clipped_2500
+    chunksizes = [50,100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000]#, 2500, 3000, 3500, 4000]
+    raster_tables = ["meris_2015_clipped", "nlcd_2006"] #glc_2000_clipped glc_2010_clipped_400 nlcd_2006_clipped_2500
     
     nodes = ["node%s" % n for n in range(1,numNodes+1)]
 
@@ -226,7 +226,7 @@ def ParallelPixelCount(connectDict, nodeDatasets, pixelValue):
         
         if len(connectDict["nodes"]) > 1 :
             whereQuery = """
-                        WHERE r.rid BETWEEN {min} AND {max}
+                        WHERE rid BETWEEN {min} AND {max}
                         """.format(**nodeRasterTableIds[n])
         else:
             whereQuery = ""        
@@ -257,7 +257,7 @@ def ParallelReclassification(connectDict, nodeDatasets, pixelValue, reclassValue
         reclassQuery = """SELECT rid, ST_Reclass(rast, 1, '%s:%s', '8BUI', 0) """ % (pixelValue, reclassValue)
         fromQuery = """FROM {raster_table} """.format(**nodeDatasets)
         if len(connectDict["nodes"]) > 1 :
-            whereQuery = """WHERE r.rid BETWEEN {min} AND {max} """.format(**nodeRasterTableIds[n])
+            whereQuery = """WHERE rid BETWEEN {min} AND {max} """.format(**nodeRasterTableIds[n])
         else:
             whereQuery = ""
 
@@ -316,10 +316,10 @@ if __name__ == '__main__':
     args = argument_parser().parse_args()
     #print(dir(args))
     testingDatasets = args.func(args.nodes)#datasetprep()
-    runs = [1]#,2,3]
+    runs = [1,2,3]
     timings = OrderedDict()
     analytic = 0
-    filePath = '/home/04489/dhaynes/postgresql_3_23_2018.csv'
+    filePath = '/home/04489/dhaynes/postgresql_4_2_2018_2node.csv'
     nodeQueries = []
 
     for dataset in testingDatasets:
@@ -337,7 +337,7 @@ if __name__ == '__main__':
             if args.command == "zonal":
                 nodeQueries = ParallelZonalAnalysis(connectionInfo, dataset)
             elif args.command == "count":
-                nodeQueries = ParallelPixelCount(connectionInfo, dataset, d["pixelValue"])
+                nodeQueries = ParallelPixelCount(connectionInfo, dataset, dataset["pixelValue"])
 
 
             psqlInstances = len(connectionInfo['nodes'])
@@ -353,8 +353,9 @@ if __name__ == '__main__':
 
                 stopPrep = timeit.default_timer()  
                 results = ParallelQuery(psqlInstances, nodeConnections, nodeQueries)
-                finalstats = ZonalStats_MergeResults(results)
-                    
+                #finalstats = ZonalStats_MergeResults(results)
+                print(results)
+    
             else:
                 print("******* ERROR ******* \n No Records returned in original query")
                 quit()
@@ -367,6 +368,6 @@ if __name__ == '__main__':
             if args.command == "zonal":
                 timings[analytic] = OrderedDict( [("Analytic", args.command), ("run", r), ("numNodes", len(connectionInfo["nodes"]) ), ("raster_table", connectionInfo["raster_table"]), ("boundary_table", connectionInfo["boundary_table"])] )
             else:
-                timings[analytic] = OrderedDict( [("Analytic", args.command), ("run", r), ("numNodes", len(connectionInfo["nodes"]) ), ("raster_table", connectionInfo["raster_table"]) ("pixelValue", d["pixelValue"]) ]) 
+                timings[analytic] = OrderedDict( [("Analytic", args.command), ("run", r), ("numNodes", len(connectionInfo["nodes"]) ), ("raster_table", connectionInfo["raster_table"]), ("pixelValue", dataset["pixelValue"]) ]) 
     print("Finished")
 
