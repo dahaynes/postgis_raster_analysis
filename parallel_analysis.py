@@ -338,7 +338,8 @@ if __name__ == '__main__':
                 nodeQueries = ParallelZonalAnalysis(connectionInfo, dataset)
             elif args.command == "count":
                 nodeQueries = ParallelPixelCount(connectionInfo, dataset, dataset["pixelValue"])
-
+            elif args.command == "reclassify":
+                nodeQueries = ParallelReclassification(connectionInfo, dataset, dataset["pixelValue"], dataset["newPixel"])
 
             psqlInstances = len(connectionInfo['nodes'])
             #nodeRasterTableIds = {n: {"min": node.min(), "max": node.max() } for n, node in enumerate(nodeQueries) }
@@ -354,7 +355,7 @@ if __name__ == '__main__':
                 stopPrep = timeit.default_timer()  
                 results = ParallelQuery(psqlInstances, nodeConnections, nodeQueries)
                 #finalstats = ZonalStats_MergeResults(results)
-                print(results)
+                #print(results)
     
             else:
                 print("******* ERROR ******* \n No Records returned in original query")
