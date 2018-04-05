@@ -130,7 +130,7 @@ def localDatasetPrep(numNodes=2):
 
     """
     chunksizes = [50,100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000]#, 2500, 3000, 3500, 4000]
-    raster_tables = ["meris_2015_clipped", "nlcd_2006"] #glc_2000_clipped glc_2010_clipped_400 nlcd_2006_clipped_2500
+    raster_tables = ["glc_2000_clipped","meris_2015_clipped", "nlcd_2006"] #glc_2000_clipped glc_2010_clipped_400 nlcd_2006_clipped_2500
     
     nodes = ["node%s" % n for n in range(1,numNodes+1)]
 
@@ -254,8 +254,8 @@ def ParallelReclassification(connectDict, nodeDatasets, pixelValue, reclassValue
     nodeQueries = []
     for n, node in enumerate(nodeDatasets['nodes']):
 
-        reclassQuery = """SELECT rid, ST_Reclass(rast, 1, '%s:%s', '8BUI', 0) """ % (pixelValue, reclassValue)
-        fromQuery = """FROM {raster_table} """.format(**nodeDatasets)
+        reclassQuery = """With analytic as ( SELECT rid, ST_Reclass(rast, 1, '%s:%s', '8BUI', 0) as rast """ % (pixelValue, reclassValue)
+        fromQuery = """FROM {raster_table}) SELECT rid FROM analytic """.format(**nodeDatasets)
         if len(connectDict["nodes"]) > 1 :
             whereQuery = """WHERE rid BETWEEN {min} AND {max} """.format(**nodeRasterTableIds[n])
         else:
@@ -273,7 +273,7 @@ def WriteFile(filePath, theDictionary):
     """
     
     thekeys = list(theDictionary.keys())
-    
+   
     with open(filePath, 'w') as csvFile:
         fields = list(theDictionary[thekeys[0]].keys())
         theWriter = csv.DictWriter(csvFile, fieldnames=fields)
@@ -319,7 +319,7 @@ if __name__ == '__main__':
     runs = [1,2,3]
     timings = OrderedDict()
     analytic = 0
-    filePath = '/home/04489/dhaynes/postgresql_4_2_2018_2node.csv'
+    filePath = '/home/04489/dhaynes/postgresql_4_5_2018_4node.csv'
     nodeQueries = []
 
     for dataset in testingDatasets:
@@ -353,7 +353,10 @@ if __name__ == '__main__':
 
 
                 stopPrep = timeit.default_timer()  
-                results = ParallelQuery(psqlInstances, nodeConnections, nodeQueries)
+                if args.command == "zonal":
+                    results = ParallelQuery(psqlInstances, nodeConnections, nodeQueries)
+                else:
+                    ParallelQuery(psqlInstances, nodeConnections, nodeQueries)
                 #finalstats = ZonalStats_MergeResults(results)
                 #print(results)
     
@@ -370,5 +373,6 @@ if __name__ == '__main__':
                 timings[analytic] = OrderedDict( [("Analytic", args.command), ("run", r), ("numNodes", len(connectionInfo["nodes"]) ), ("raster_table", connectionInfo["raster_table"]), ("boundary_table", connectionInfo["boundary_table"])] )
             else:
                 timings[analytic] = OrderedDict( [("Analytic", args.command), ("run", r), ("numNodes", len(connectionInfo["nodes"]) ), ("raster_table", connectionInfo["raster_table"]), ("pixelValue", dataset["pixelValue"]) ]) 
+    WriteFile(filePath, timings)
     print("Finished")
 
