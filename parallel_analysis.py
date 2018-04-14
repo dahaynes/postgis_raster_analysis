@@ -129,12 +129,13 @@ def localDatasetPrep(numNodes=2):
     """
 
     """
-    chunksizes = [50,100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000]#, 2500, 3000, 3500, 4000]
+    chunksizes = [50,100, 200, 300, 400, 500, 600, 700, 800]#, 900, 1000, 1500, 2000]#, 2500, 3000, 3500, 4000]
     raster_tables = ["glc_2000_clipped","meris_2015_clipped", "nlcd_2006"] #glc_2000_clipped glc_2010_clipped_400 nlcd_2006_clipped_2500
     
     nodes = ["node%s" % n for n in range(1,numNodes+1)]
 
-    rasterTables =  [ "%s_%s" % (raster, chunk) for raster in raster_tables for chunk in chunksizes ]
+    rasterTables =  [ "%s_%s" % (raster, chunk) for raster in raster_tables for chunk in chunksizes  ]
+ 
     datasetRuns = []
     for r in rasterTables:
         if "glc_2000_clipped" in r: 
@@ -174,7 +175,7 @@ def zonalDatasetPrep(numNodes=2):
             pixelValue = 21
         datasetRuns.append(  OrderedDict([ ("raster_table", r), ("nodes", nodes), ("pixelValue", pixelValue) ]) )
 
-    datasetRuns = [ OrderedDict([("boundary_table", "%s_proj" % b),("raster_table", r), ("nodes", nodes)] ) if "nlcd" in r else OrderedDict([("boundary_table", b),("raster_table", r), ("nodes", nodes)] ) for r in rasterTables for b in boundaries ]
+    datasetRuns = [ OrderedDict([("boundary_table", "%s_prj" % b),("raster_table", r), ("nodes", nodes)] ) if "nlcd" in r else OrderedDict([("boundary_table", b),("raster_table", r), ("nodes", nodes)] ) for r in rasterTables for b in boundaries ]
 
     return datasetRuns
 
@@ -319,7 +320,7 @@ if __name__ == '__main__':
     runs = [1,2,3]
     timings = OrderedDict()
     analytic = 0
-    filePath = '/home/04489/dhaynes/postgresql_4_5_2018_4node.csv'
+    filePath = '/home/04489/dhaynes/postgresql_zonal_4_7_2018_2node.csv'
     nodeQueries = []
 
     for dataset in testingDatasets:
@@ -370,9 +371,9 @@ if __name__ == '__main__':
 
             analytic += 1
             if args.command == "zonal":
-                timings[analytic] = OrderedDict( [("Analytic", args.command), ("run", r), ("numNodes", len(connectionInfo["nodes"]) ), ("raster_table", connectionInfo["raster_table"]), ("boundary_table", connectionInfo["boundary_table"])] )
+                timings[analytic] = OrderedDict( [("Analytic", args.command), ("run", r), ("numNodes", len(connectionInfo["nodes"]) ), ("raster_table", connectionInfo["raster_table"]), ("boundary_table", connectionInfo["boundary_table"]), ("datapreptime", stopPrep-start), ("querytime", stop-stopPrep)   ])
             else:
-                timings[analytic] = OrderedDict( [("Analytic", args.command), ("run", r), ("numNodes", len(connectionInfo["nodes"]) ), ("raster_table", connectionInfo["raster_table"]), ("pixelValue", dataset["pixelValue"]) ]) 
+                timings[analytic] = OrderedDict( [("Analytic", args.command), ("run", r), ("numNodes", len(connectionInfo["nodes"]) ), ("raster_table", connectionInfo["raster_table"]), ("pixelValue", dataset["pixelValue"]), ("datapreptime", stopPrep-start), ("querytime", stop-stopPrep) ]) 
     WriteFile(filePath, timings)
     print("Finished")
 
