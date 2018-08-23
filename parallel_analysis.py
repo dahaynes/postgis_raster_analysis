@@ -317,10 +317,10 @@ if __name__ == '__main__':
     args = argument_parser().parse_args()
     #print(dir(args))
     testingDatasets = args.func(args.nodes)#datasetprep()
-    runs = [1,2,3]
+    runs = [1]#,2,3]
     timings = OrderedDict()
     analytic = 0
-    filePath = '/home/04489/dhaynes/postgresql_zonal_4_7_2018_2node.csv'
+    filePath = '/home/04489/dhaynes/postgresql_zonal_4_19_2018_4node.csv'
     nodeQueries = []
 
     for dataset in testingDatasets:
@@ -356,6 +356,7 @@ if __name__ == '__main__':
                 stopPrep = timeit.default_timer()  
                 if args.command == "zonal":
                     results = ParallelQuery(psqlInstances, nodeConnections, nodeQueries)
+                    print(nodeQueries)
                 else:
                     ParallelQuery(psqlInstances, nodeConnections, nodeQueries)
                 #finalstats = ZonalStats_MergeResults(results)
