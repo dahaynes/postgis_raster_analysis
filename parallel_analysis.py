@@ -129,7 +129,7 @@ def localDatasetPrep(numNodes=2):
     """
 
     """
-    chunksizes = [50,100, 200, 300, 400, 500, 600, 700, 800]#, 900, 1000, 1500, 2000]#, 2500, 3000, 3500, 4000]
+    chunksizes = [50, 100, 200, 300, 400, 500, 600, 700, 800]#, 900, 1000, 1500, 2000]#, 2500, 3000, 3500, 4000]
     raster_tables = ["glc_2000_clipped","meris_2015_clipped", "nlcd_2006"] #glc_2000_clipped glc_2010_clipped_400 nlcd_2006_clipped_2500
     
     nodes = ["node%s" % n for n in range(1,numNodes+1)]
@@ -159,7 +159,7 @@ def zonalDatasetPrep(numNodes=2):
     """
     
 
-    chunksizes = [50,100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000]#, 2500, 3000, 3500, 4000]
+    chunksizes = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000]#, 2500, 3000, 3500, 4000]
     raster_tables = ["glc_2000_clipped", "meris_2015_clipped", "nlcd_2006"] #glc_2010_clipped_400 nlcd_2006_clipped_2500
     boundaries = ["states","regions","counties","tracts"]
     nodes = ["node%s" % n for n in range(1,numNodes+1)]
@@ -266,7 +266,30 @@ def ParallelReclassification(connectDict, nodeDatasets, pixelValue, reclassValue
         nodeQueries.append(query) 
 
     return nodeQueries
-            
+
+def ParallelFocalAnalysis(connectDict, nodeDatasets):
+    """
+
+    """
+    
+    master = psqlLib(connectDict)
+    nodeRasterTableIds = master.PartitionRaster(connectDict["raster_table"],len(connectDict["nodes"]) )
+
+    nodeQueries = []
+    for n, node in enumerate(nodeDatasets['nodes']):
+
+    focalQuery = """SELECT st_mapalgebrafctngb(rast, 1, NULL, 1, 1, 'st_mean4ma(double precision[][][],text,text[])'::regprocedure, 'ignore', NULL) as rast
+    FROM {raster_table}""".format(**nodeDatasets)
+
+    if len(connectDict["nodes"]) > 1 :
+        whereQuery = """WHERE rid BETWEEN {min} AND {max} """.format(**nodeRasterTableIds[n])
+    else:
+        whereQuery = ""
+
+    query = reclassQuery + fromQuery + whereQuery
+    nodeQueries.append(query) 
+
+    return nodeQueries
 
 def WriteFile(filePath, theDictionary):
     """
@@ -310,6 +333,9 @@ def argument_parser():
     #reclass_subparser.add_argument('-new', required=True, type=int,  help='pixel value', dest="newPixel")
     reclass_subparser.set_defaults(func=localDatasetPrep)
 
+    focal_subparser = subparser.add_parser('focal')
+    focal_subparser.set_defaults(func=localDatasetPrep)
+
     return parser
 
 
@@ -341,6 +367,8 @@ if __name__ == '__main__':
                 nodeQueries = ParallelPixelCount(connectionInfo, dataset, dataset["pixelValue"])
             elif args.command == "reclassify":
                 nodeQueries = ParallelReclassification(connectionInfo, dataset, dataset["pixelValue"], dataset["newPixel"])
+            elif args.command == "focal":
+                nodeQueries = ParallelFocalAnalysis(connectionInfo, dataset)
 
             psqlInstances = len(connectionInfo['nodes'])
             #nodeRasterTableIds = {n: {"min": node.min(), "max": node.max() } for n, node in enumerate(nodeQueries) }
@@ -374,7 +402,7 @@ if __name__ == '__main__':
             if args.command == "zonal":
                 timings[analytic] = OrderedDict( [("Analytic", args.command), ("run", r), ("numNodes", len(connectionInfo["nodes"]) ), ("raster_table", connectionInfo["raster_table"]), ("boundary_table", connectionInfo["boundary_table"]), ("datapreptime", stopPrep-start), ("querytime", stop-stopPrep)   ])
             else:
-                timings[analytic] = OrderedDict( [("Analytic", args.command), ("run", r), ("numNodes", len(connectionInfo["nodes"]) ), ("raster_table", connectionInfo["raster_table"]), ("pixelValue", dataset["pixelValue"]), ("datapreptime", stopPrep-start), ("querytime", stop-stopPrep) ]) 
+                timings[analytic] = OrderedDict( [("Analytic", args.command), ("run", r), ("numNodes", len(connectionInfo["nodes"]) ), ("raster_table", connectionInfo["raster_table"]), ("dataset", connectionInfo["raster_table"].split("_")[:-1]), ("tilesize", connectionInfo["raster_table"].split("_")[0]), ("pixelValue", dataset["pixelValue"]), ("datapreptime", stopPrep-start), ("querytime", stop-stopPrep) ]) 
     WriteFile(filePath, timings)
     print("Finished")
 
