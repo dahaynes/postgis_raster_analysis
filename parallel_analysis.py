@@ -207,6 +207,14 @@ def ParallelZonalAnalysis(connectDict, nodeDatasets):
 
     return nodeQueries
 
+def ParallelRasterAdd():
+    """
+
+    """
+    """SELECT ST_MapAlgebra(r1.rast, 1, r2.rast, 1, '[rast1]*[rast2]', '8BUI') as rast
+    FROM glc_2010_clipped_100 r1, glc_2000_clipped_100 r2 """
+
+
 def ParallelPixelCount(connectDict, nodeDatasets, pixelValue):
     """
     Function for counting the number of pixels in a dataset
