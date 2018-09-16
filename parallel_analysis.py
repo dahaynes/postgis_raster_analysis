@@ -360,6 +360,9 @@ def argument_parser():
     focal_subparser = subparser.add_parser('focal')
     focal_subparser.set_defaults(func=localDatasetPrep)
 
+    add_subparser = subparser.add_parser('add')
+    add_subparser.set_defaults(func=localDatasetPrep)
+
     return parser
 
 
@@ -393,6 +396,8 @@ if __name__ == '__main__':
                 nodeQueries = ParallelReclassification(connectionInfo, dataset, dataset["pixelValue"], dataset["newPixel"])
             elif args.command == "focal":
                 nodeQueries = ParallelFocalAnalysis(connectionInfo, dataset)
+            elif args.command == "add":
+                nodeQueries = ParallelRasterAdd(connectionInfo, dataset)
 
             psqlInstances = len(connectionInfo['nodes'])
             #nodeRasterTableIds = {n: {"min": node.min(), "max": node.max() } for n, node in enumerate(nodeQueries) }
