@@ -207,13 +207,30 @@ def ParallelZonalAnalysis(connectDict, nodeDatasets):
 
     return nodeQueries
 
-def ParallelRasterAdd():
+def ParallelRasterAdd(connectDict, nodeDatasets):
     """
-
+    Function for adding two raster datasets together
     """
-    """SELECT ST_MapAlgebra(r1.rast, 1, r2.rast, 1, '[rast1]*[rast2]', '8BUI') as rast
-    FROM glc_2010_clipped_100 r1, glc_2000_clipped_100 r2 """
+    
 
+    master = psqlLib(connectDict)
+    nodeRasterTableIds = master.PartitionRaster(connectDict["raster_table"],len(connectDict["nodes"]) )
+    
+    nodeQueries = []
+    for n, node in enumerate(nodeDatasets['nodes']):
+        
+        selectStatement = """SELECT ST_MapAlgebra(r1.rast, 1, r2.rast, 1, '[rast1]*[rast2]', '8BUI') as rast """
+        fromStatement = """FROM {raster_table} r1, {raster_table} r2 """.format(**nodeDatasets)
+        
+        if len(connectDict["nodes"]) > 1:
+            whereStatement = """ WHERE r.rid BETWEEN {min} AND {max} """.format(**nodeRasterTableIds[n])
+        else:
+            whereStatement = ""
+
+        query = selectStatement.replace("\n","") + fromStatement + whereStatement 
+        nodeQueries.append(query)   
+
+    return nodeQueries
 
 def ParallelPixelCount(connectDict, nodeDatasets, pixelValue):
     """
