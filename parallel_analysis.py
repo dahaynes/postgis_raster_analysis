@@ -130,7 +130,7 @@ def localDatasetPrep(numNodes=2):
 
     """
     chunksizes = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]#, 1500, 2000]#, 2500, 3000, 3500, 4000]
-    raster_tables = ["nlcd_2006"]#["glc_2000_clipped","meris_2015_clipped"]#, "nlcd_2006"] #glc_2000_clipped glc_2010_clipped_400 nlcd_2006_clipped_2500
+    raster_tables = ["glc_2000_clipped","meris_2015_clipped"]#, "nlcd_2006"] #glc_2000_clipped glc_2010_clipped_400 nlcd_2006_clipped_2500
     
     nodes = ["node%s" % n for n in range(1,numNodes+1)]
 
@@ -373,7 +373,7 @@ if __name__ == '__main__':
     runs = [1]#,2,3]
     timings = OrderedDict()
     analytic = 0
-    filePath = '/home/04489/dhaynes/postgresql_focal_nlcd_9_11_18_1node.csv'
+    filePath = '/home/04489/dhaynes/postgresql_add_raster_9_16_18_1node.csv'
     nodeQueries = []
 
     for dataset in testingDatasets:
@@ -415,6 +415,7 @@ if __name__ == '__main__':
                     results = ParallelQuery(psqlInstances, nodeConnections, nodeQueries)
                     print(nodeQueries)
                 else:
+                    print(nodeQueries)
                     ParallelQuery(psqlInstances, nodeConnections, nodeQueries)
                 #finalstats = ZonalStats_MergeResults(results)
                 #print(results)
