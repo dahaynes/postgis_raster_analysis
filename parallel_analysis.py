@@ -402,7 +402,7 @@ if __name__ == '__main__':
             psqlInstances = len(connectionInfo['nodes'])
             #nodeRasterTableIds = {n: {"min": node.min(), "max": node.max() } for n, node in enumerate(nodeQueries) }
 
-            if nodeQueries > 1:
+            if len(nodeQueries) > 1:
                 nodeConnections = []
                 for n in connectionInfo['nodes']:
                     nodeConnection = deepcopy(connectionInfo)
@@ -419,9 +419,11 @@ if __name__ == '__main__':
                     ParallelQuery(psqlInstances, nodeConnections, nodeQueries)
                 #finalstats = ZonalStats_MergeResults(results)
                 #print(results)
-            elif nodeQueries == 1:
+            elif len(nodeQueries) == 1:
                 #Running timing queries on master
-                nodeQueries(connectionInfo, nodeQueries[0])
+                print(nodeQueries)
+                stopPrep = timeit.default_timer()
+                NodeQuery((connectionInfo, nodeQueries[0]))
                 
             else:
                 print("******* ERROR ******* \n No Records returned in original query")
